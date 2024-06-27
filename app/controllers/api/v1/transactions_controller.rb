@@ -1,7 +1,7 @@
 module Api
   module V1
     class TransactionsController < ApplicationController
-      def single_transaction
+      def create
         user = User.find_by(id: transaction_params[:user_id])
         return render_user_not_found unless user
 
@@ -15,18 +15,38 @@ module Api
 
       def bulk_transactions
         transactions = []
+        invalid_transactions = []
         user_ids = transactions_params[:transactions].map { |t| t[:user_id] }
-        valid_user_ids = User.where(id: user_ids).pluck(:id).to_set
+        
+        valid_user_ids = User.where(id: user_ids).pluck(:id)
 
         transactions_params[:transactions].each do |transaction_data|
-          next unless valid_user_ids.include?(transaction_data[:user_id].to_i)
-          transactions << Transaction.new(transaction_data.permit(:transaction_id, :points, :user_id, :status))
+          unless valid_user_ids.include?(transaction_data[:user_id].to_i)
+            invalid_transactions << { transaction_data: transaction_data, errors: ['Invalid user_id'] }
+            next
+          end
+
+          transaction = Transaction.new(transaction_data.permit(:transaction_id, :points, :user_id, :status))
+          unless transaction.valid?
+            invalid_transactions << { transaction_data: transaction_data, errors: transaction.errors.full_messages }
+            next
+          end
+
+          transactions << transaction
         end
 
-        result = Transaction.import(transactions)
-        processed_count = result.ids.size
+        if transactions.any?
+          result = Transaction.import(transactions)
+          processed_count = result.ids.size
+        else
+          processed_count = 0
+        end
 
-        render json: { status: 'success', processed_count: processed_count }, status: :created
+        if invalid_transactions.any?
+          render json: { status: 'error', processed_count: processed_count, invalid_transactions: invalid_transactions }, status: :unprocessable_entity
+        else
+          render json: { status: 'success', processed_count: processed_count }, status: :created
+        end
       end
 
       private
