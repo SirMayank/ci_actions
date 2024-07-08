@@ -61,3 +61,4 @@ class Api::V1::TransactionsController < ApplicationController
     render json: { status: 'error', message: 'User not found' }, status: :not_found
   end
 end
+
